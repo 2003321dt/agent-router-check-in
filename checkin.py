@@ -258,27 +258,68 @@ async def login_with_credentials(
 		return None
 
 
+def _safe_response_content_type(response: httpx.Response) -> str:
+	"""Only log known MIME types; never print untrusted header values verbatim."""
+	raw_type = response.headers.get('content-type', '').split(';', 1)[0].strip().lower()
+	if not raw_type:
+		return 'missing'
+
+	known_types = {
+		'application/json',
+		'application/problem+json',
+		'application/xml',
+		'application/octet-stream',
+		'text/html',
+		'text/plain',
+		'text/xml',
+	}
+	return raw_type if raw_type in known_types else 'other'
+
+
 def get_user_info(client, headers, user_info_url: str):
-	"""获取用户信息"""
+	"""Fetch user info with privacy-safe HTTP/JSON diagnostics."""
 	try:
 		response = client.get(user_info_url, headers=headers, timeout=30)
+		status = response.status_code
+		content_type = _safe_response_content_type(response)
+		diagnostic = f'[DIAGNOSTIC] User info: HTTP {status}, Content-Type={content_type}'
 
-		if response.status_code == 200:
+		if status != 200:
+			print(f'{diagnostic}, JSON=not-checked')
+			return {'success': False, 'error': f'Failed to get user info: HTTP {status}'}
+
+		try:
 			data = response.json()
-			if data.get('success'):
-				user_data = data.get('data', {})
-				quota = round(user_data.get('quota', 0) / 500000, 2)
-				used_quota = round(user_data.get('used_quota', 0) / 500000, 2)
-				return {
-					'success': True,
-					'quota': quota,
-					'used_quota': used_quota,
-					'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
-				}
-		return {'success': False, 'error': f'Failed to get user info: HTTP {response.status_code}'}
-	except Exception as e:
-		return {'success': False, 'error': f'Failed to get user info: {str(e)[:50]}...'}
+		except ValueError:
+			print(f'{diagnostic}, JSON=invalid')
+			return {'success': False, 'error': f'Failed to get user info: HTTP {status}, invalid JSON'}
 
+		print(f'{diagnostic}, JSON=valid')
+		if not isinstance(data, dict):
+			return {'success': False, 'error': 'Failed to get user info: unexpected JSON structure'}
+		if not data.get('success'):
+			return {'success': False, 'error': 'Failed to get user info: API reported failure'}
+
+		user_data = data.get('data')
+		if not isinstance(user_data, dict):
+			return {'success': False, 'error': 'Failed to get user info: unexpected JSON structure'}
+
+		quota = round(user_data.get('quota', 0) / 500000, 2)
+		used_quota = round(user_data.get('used_quota', 0) / 500000, 2)
+		return {
+			'success': True,
+			'quota': quota,
+			'used_quota': used_quota,
+			'display': f':money: Current balance: $\${quota}, Used: $\${used_quota}',
+		}
+	except httpx.RequestError as exc:
+		# Exception messages may include URLs, headers, or credentials. Log only the type.
+		print(f'[DIAGNOSTIC] User info: {type(exc).__name__}, HTTP response unavailable')
+		return {'success': False, 'error': 'Failed to get user info: network request failed'}
+	except Exception:
+		# Never include raw exception strings or response bodies in diagnostic logs.
+		print('[DIAGNOSTIC] User info: unexpected processing error (details omitted)')
+		return {'success': False, 'error': 'Failed to get user info: unexpected processing error'}
 
 async def prepare_cookies(account_name: str, provider_config, user_cookies: dict) -> dict | None:
 	"""准备请求所需的 cookies（可能包含 WAF cookies）"""
