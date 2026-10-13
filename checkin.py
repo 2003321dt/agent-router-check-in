@@ -310,7 +310,7 @@ def get_user_info(client, headers, user_info_url: str):
 			'success': True,
 			'quota': quota,
 			'used_quota': used_quota,
-			'display': f':money: Current balance: $${quota}, Used: $${used_quota}',
+			'display': f':money: Current balance: ${quota}, Used: ${used_quota}',
 		}
 	except httpx.RequestError as exc:
 		# Exception messages may include URLs, headers, or credentials. Log only the type.
