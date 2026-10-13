@@ -69,7 +69,7 @@
 - `email` + `password`：推荐的浏览器登录方式，登录成功后会自动获取 cookies 与用户标识
 - `cookies`：兼容旧版的 session cookies 登录方式
 - `api_user`：session cookies 登录时用于请求头的 new-api-user 参数；邮箱密码登录可省略
-- `provider` (可选)：指定使用的服务商，默认为 `agentrouter`
+- `provider` (可选)：指定使用的服务商，默认为 `agentrouter`；备用站使用 `agentrouter_backup`
 - `name` (可选)：自定义账号显示名称，用于通知和日志中标识账号
 
 **默认值说明**：
@@ -88,6 +88,31 @@
 
 ![获取 api_user](./assets/request-api-user.png)
 
+### AgentRouter 官方备用域名（GitHub OAuth / Cookie 模式）
+
+AgentRouter 公告列出备用域名 `https://ps.air-outer.com`。本仓库新增独立的 `agentrouter_backup` 服务商，不会自动切换域名或向备用站发送主站的 Session。
+
+1. 访问 `https://ps.air-outer.com`，使用 GitHub OAuth 正常登录。
+2. 在浏览器开发者工具的 **Application → Cookies → https://ps.air-outer.com** 下复制该域名的 `session` **值**（不包含 `session=`）。
+3. 在 **Network → Fetch/XHR** 中查看备用域名的 `/api/user/self`，确认返回已登录用户的 JSON，并记录请求头 `New-Api-User` 的值。
+4. 在 Fork 仓库 **Settings → Environments → production → Environment secrets** 更新 `ANYROUTER_ACCOUNTS`（只在 Secret 中填写真实值）：
+
+```json
+[
+  {
+    "name": "AgentRouter 备用站",
+    "provider": "agentrouter_backup",
+    "cookie_domain": "ps.air-outer.com",
+    "cookies": {"session": "在备用站重新登录后获取的session值"},
+    "api_user": "备用站请求头中的New-Api-User"
+  }
+]
+```
+
+- `cookie_domain` 是必填安全确认字段：只有与备用站域名匹配，脚本才允许发送 Cookie；不能只改 `provider` 而沿用主站凭证。
+- 该备用配置默认不开启 CloakBrowser/WAF Cookie 获取，使用 HTTP 请求；无需修改现有只覆盖 `agentrouter` 的 `PROVIDERS` Secret。
+- 当前检查仅验证用户信息 API 是否能返回 JSON，不保证网站已经发放每日签到额度；请以实际余额变化为准。
+- 不要将 Session、Cookie、Token 或带有凭证的截图提交到公共仓库或聊天中。
 ### 5. 启用 GitHub Actions
 
 1. 在你的仓库中，点击 "Actions" 选项卡

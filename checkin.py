@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from urllib.parse import urlparse
 
 if hasattr(sys.stdout, 'reconfigure'):
 	sys.stdout.reconfigure(line_buffering=True)
@@ -415,6 +416,19 @@ def format_check_in_notification(detail: dict) -> str:
 	return '\n'.join(lines)
 
 
+def backup_cookie_domain_matches(account: AccountConfig, provider_config) -> bool:
+	"""Require explicit per-host cookie consent before contacting the backup domain."""
+	if account.provider != 'agentrouter_backup':
+		return True
+	if account.has_login_credentials() or account.has_github_credentials() or not account.cookies:
+		return False
+	if not isinstance(account.cookie_domain, str):
+		return False
+
+	expected_host = urlparse(provider_config.domain).hostname
+	provided_host = account.cookie_domain.strip().lower().lstrip('.')
+	return bool(expected_host) and provided_host == expected_host
+
 async def check_in_account(account: AccountConfig, account_index: int, app_config: AppConfig):
 	"""为单个账号执行签到操作"""
 	account_name = account.get_display_name(account_index)
@@ -423,6 +437,13 @@ async def check_in_account(account: AccountConfig, account_index: int, app_confi
 	provider_config = app_config.get_provider(account.provider)
 	if not provider_config:
 		print(f'[FAILED] {account_name}: Provider "{account.provider}" not found in configuration')
+		return False, None, None
+
+	if not backup_cookie_domain_matches(account, provider_config):
+		print(
+			f'[FAILED] {account_name}: Backup provider requires a session freshly obtained from'
+			' its own domain and a matching cookie_domain; refusing to send credentials'
+		)
 		return False, None, None
 
 	print(f'[INFO] {account_name}: Using provider "{account.provider}" ({provider_config.domain})')
@@ -512,7 +533,13 @@ def run_check_in_requests(
 			print(f'[WARN] {account_name}: Provider requires proxy but CHECKIN_PROXY_URL is not set')
 
 		with httpx.Client(**client_kwargs) as client:
-			client.cookies.update(all_cookies)
+			if account.provider == 'agentrouter_backup':
+				# Bind backup credentials to the intended host; do not create global cookies.
+				host = urlparse(provider_config.domain).hostname
+				for cookie_name, cookie_value in all_cookies.items():
+					client.cookies.set(str(cookie_name), str(cookie_value), domain=host, path='/')
+			else:
+				client.cookies.update(all_cookies)
 
 			headers = {
 				'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',

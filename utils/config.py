@@ -110,6 +110,18 @@ class AppConfig:
 				use_proxy=True,
 				persist_profile=False,
 			),
+			'agentrouter_backup': ProviderConfig(
+				name='agentrouter_backup',
+				domain='https://ps.air-outer.com',
+				login_path='/login',
+				sign_in_path=None,  # AgentRouter has no separate check-in endpoint
+				user_info_path='/api/user/self',
+				api_user_key='new-api-user',
+				bypass_method=None,  # Cookie-only; no browser download on the backup host
+				waf_cookie_names=[],
+				use_proxy=False,
+				persist_profile=False,
+			),
 		}
 
 		# 尝试从环境变量加载自定义 providers
@@ -154,6 +166,7 @@ class AccountConfig:
 	"""账号配置"""
 
 	cookies: dict | str | None
+	cookie_domain: str | None = None  # Explicit origin of session cookie (backup provider)
 	api_user: str | None = None
 	provider: str = 'agentrouter'
 	name: str | None = None
@@ -170,6 +183,7 @@ class AccountConfig:
 
 		return cls(
 			cookies=data.get('cookies'),
+			cookie_domain=data.get('cookie_domain'),
 			api_user=data.get('api_user'),
 			provider=provider,
 			name=name if name else None,
