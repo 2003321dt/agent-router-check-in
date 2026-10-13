@@ -31,6 +31,13 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: 检测是否需要浏览器
+      id: browser_mode
+      env:
+        ANYROUTER_ACCOUNTS: ${{ secrets.ANYROUTER_ACCOUNTS }}
+        PROVIDERS: ${{ secrets.PROVIDERS }}
+      run: python -m scripts.select_runtime
+
     - name: 缓存 UV 依赖
       uses: actions/cache@v5
       id: uv-cache
@@ -46,12 +53,14 @@ jobs:
         echo "✅ 环境初始化完成"
 
     - name: 安装系统依赖
+      if: steps.browser_mode.outputs.needs_browser == 'true'
       run: |
         sudo apt-get update
         sudo apt-get install -y xvfb fonts-noto-color-emoji fonts-freefont-ttf fonts-unifont \
           fonts-ipafont-gothic fonts-wqy-zenhei fonts-tlwg-loma-otf
 
     - name: 缓存 CloakBrowser 二进制
+      if: steps.browser_mode.outputs.needs_browser == 'true'
       uses: actions/cache@v5
       id: cloakbrowser-cache
       with:
@@ -61,6 +70,7 @@ jobs:
           ${{ runner.os }}-cloakbrowser-
 
     - name: 安装 CloakBrowser
+      if: steps.browser_mode.outputs.needs_browser == 'true'
       run: |
         uv run python -m cloakbrowser install
         echo "✅ CloakBrowser 安装完成"
@@ -84,6 +94,7 @@ jobs:
 
     - name: 执行签到
       env:
+        NEEDS_BROWSER: ${{ steps.browser_mode.outputs.needs_browser }}
         DEBUG_MODE: ${{ env.DEBUG_MODE }}
         CHECKIN_HEADLESS: false
         CHECKIN_HUMANIZE: true
@@ -108,10 +119,14 @@ jobs:
         BARK_KEY: ${{ secrets.BARK_KEY }}
         BARK_SERVER: ${{ secrets.BARK_SERVER }}
       run: |
-        xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        if [ "$NEEDS_BROWSER" = "true" ]; then
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" uv run checkin.py
+        else
+          uv run checkin.py
+        fi
 
     - name: 上传调试截图
-      if: always() && env.DEBUG_MODE == 'true'
+      if: always() && env.DEBUG_MODE == 'true' && steps.browser_mode.outputs.needs_browser == 'true'
       env:
         HTTP_PROXY: ''
         HTTPS_PROXY: ''
